@@ -5,14 +5,14 @@ import os
 from datetime import datetime
 
 app = Flask(__name__)
-
+MAX_TREASURE_SPEND = 4
 # Game state
 state = {
     'life': 40,
     'robots': 0,
     'treasures': 0,
-    'token_multiplier': 1,
-    'lifegain_multiplier': 1,
+    'token_multiplier': 0,
+    'lifegain_multiplier': 0,
     'etb_lifegain_sources': 0,
     'barbarian_class_active': False,
     'jackpot_count': 0,
@@ -31,49 +31,51 @@ def get_state():
 
 @app.route('/api/spin', methods=['POST'])
 def spin():
-    data = request.json
-    treasures_spent = data.get('treasures_spent', 0)
-    
-    # Validate treasure spend
+    data = request.json or {}
+
+    requested_spend = int(data.get('treasures_spent', 0))
+    treasures_spent = min(requested_spend, MAX_TREASURE_SPEND)
+
+    # Validate first
     if treasures_spent > state['treasures']:
         return jsonify({'error': 'Not enough treasures'}), 400
-    
-    # Deduct treasures
+
+    # ✅ DEDUCT IMMEDIATELY
     state['treasures'] -= treasures_spent
-    
-    # Calculate number of dice
+
+    # Dice count: 1 base + 1 per treasure
     num_dice = 1 + treasures_spent
-    
+
     # Roll dice
     if state['barbarian_class_active']:
         total_rolled = num_dice * 2
-        all_rolls = [random.randint(1, 6) for _ in range(total_rolled)]
-        all_rolls_sorted = sorted(all_rolls)  # Low to high
-        ignored_rolls = all_rolls_sorted[:num_dice]  # Lowest half (duds)
-        dice_rolls = all_rolls_sorted[num_dice:]  # Highest half (keepers)
+        rolls = [random.randint(1, 6) for _ in range(total_rolled)]
+        rolls.sort()
+        ignored_rolls = rolls[:num_dice]
+        dice_rolls = rolls[num_dice:]
     else:
         dice_rolls = [random.randint(1, 6) for _ in range(num_dice)]
         ignored_rolls = []
-    
-    # Evaluate each die separately
+
+    # Evaluate rolls
     base_robots = 0
     base_treasures = 0
     hit_count = 0
     jackpot_count = 0
     miss_count = 0
-    
+
     for die in dice_rolls:
         if die <= 3:
             miss_count += 1
         elif die <= 5:
             hit_count += 1
             base_robots += 1
-        else:  # die == 6
+        else:
             jackpot_count += 1
             base_robots += 1
             base_treasures += 1
-    
-    # Determine overall outcome for display
+
+    # Outcome
     if jackpot_count > 0:
         outcome = 'JACKPOT'
         state['jackpot_count'] += jackpot_count
@@ -81,21 +83,26 @@ def spin():
         outcome = 'HIT'
     else:
         outcome = 'MISS'
-    
-    # Apply token multiplier
-    robots_created = base_robots * (2 ** state['token_multiplier'])
-    treasures_created = base_treasures * (2 ** state['token_multiplier'])
-    
-    # Calculate lifegain
-    base_life = robots_created * state['etb_lifegain_sources']
-    life_gained = int(base_life * (2 ** state['lifegain_multiplier']))
-    
-    # Update state
+
+    # Token multiplier (2^mult, allow 0)
+    token_mult = 2 ** state['token_multiplier']
+    robots_created = base_robots * token_mult
+    treasures_created = base_treasures * token_mult
+
+    # Lifegain logic (0-safe)
+    if state['etb_lifegain_sources'] > 0:
+        base_life = robots_created * state['etb_lifegain_sources']
+        life_mult = 2 ** state['lifegain_multiplier']
+        life_gained = base_life * life_mult
+    else:
+        life_gained = 0
+
+    # Apply rewards
     state['robots'] += robots_created
     state['treasures'] += treasures_created
     state['life'] += life_gained
-    
-    # Create event log entry
+
+    # Log event
     event = {
         'timestamp': datetime.now().isoformat(),
         'treasures_spent': treasures_spent,
@@ -108,14 +115,10 @@ def spin():
         'robots_created': robots_created,
         'treasures_created': treasures_created,
         'life_gained': life_gained,
-        'new_totals': {
-            'life': state['life'],
-            'robots': state['robots'],
-            'treasures': state['treasures']
-        }
     }
+
     state['event_log'].append(event)
-    
+
     return jsonify({
         'event': event,
         'state': state
