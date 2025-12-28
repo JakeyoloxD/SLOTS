@@ -539,6 +539,35 @@
             const hitSound = createAudio('static/HIT.wav');
             const jackpotSound = createAudio('static/JACKPOT.wav');
 
+            const allSounds = [pullSound, nextSound, missSound, hitSound, jackpotSound];
+            let audioUnlocked = false;
+
+            // Mobile browsers require audio to be "unlocked" via user interaction
+            function unlockAudio() {
+                if (audioUnlocked) return;
+                
+                allSounds.forEach(function(sound) {
+                    // Play and immediately pause to unlock
+                    sound.muted = true;
+                    sound.play().then(function() {
+                        sound.pause();
+                        sound.muted = false;
+                        sound.currentTime = 0;
+                    }).catch(function() {});
+                });
+                
+                audioUnlocked = true;
+                // Remove listeners after unlock
+                document.removeEventListener('touchstart', unlockAudio);
+                document.removeEventListener('touchend', unlockAudio);
+                document.removeEventListener('click', unlockAudio);
+            }
+
+            // Attach unlock listeners
+            document.addEventListener('touchstart', unlockAudio, { once: true });
+            document.addEventListener('touchend', unlockAudio, { once: true });
+            document.addEventListener('click', unlockAudio, { once: true });
+
             function playSound(audio) {
                 if (!audio) return;
                 try {
