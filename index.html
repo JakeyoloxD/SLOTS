@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Mr. House Slot Machine</title>
     <style>
         * {
@@ -17,6 +19,12 @@
             color: #fff;
             overflow-x: hidden;
             min-height: 100vh;
+            min-height: -webkit-fill-available;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+
+        html {
+            height: -webkit-fill-available;
         }
 
         .container {
@@ -537,6 +545,89 @@
                 font-size: 2.5em;
             }
         }
+
+        @media (max-width: 350px) {
+            .container {
+                padding: 5px;
+            }
+            .cabinet {
+                padding: 10px;
+                border-width: 3px;
+            }
+            .title {
+                font-size: 1.2em;
+                margin-bottom: 10px;
+            }
+            .counters, .modifiers {
+                gap: 5px;
+            }
+            .counter, .modifier {
+                padding: 8px 3px;
+            }
+            .counter-label, .modifier-label {
+                font-size: 0.6em;
+            }
+            .counter-value {
+                font-size: 1.3em;
+            }
+            .counter-btn {
+                padding: 2px 8px;
+                font-size: 0.9em;
+            }
+            .modifier-value {
+                font-size: 1em;
+            }
+            .reels-container {
+                padding: 10px;
+                min-height: 120px;
+                gap: 5px;
+            }
+            .reel {
+                width: 40px;
+                height: 80px;
+                border-width: 2px;
+            }
+            .reel-face {
+                height: 80px;
+                font-size: 2em;
+            }
+            .result-banner {
+                font-size: 1.8em;
+                min-height: 40px;
+                margin: 10px 0;
+            }
+            .payout-tray {
+                min-height: 60px;
+                padding: 8px;
+                margin-bottom: 15px;
+            }
+            .payout-item {
+                font-size: 1.5em;
+                margin: 3px;
+            }
+            .spin-button {
+                padding: 15px;
+                font-size: 1.4em;
+            }
+            .action-btn {
+                padding: 8px 12px;
+                font-size: 0.9em;
+            }
+            .event-log {
+                max-height: 150px;
+                padding: 8px;
+            }
+            .log-entry {
+                font-size: 0.65em;
+                padding: 5px;
+            }
+            .fullscreen-btn {
+                font-size: 1em;
+                padding: 3px 6px;
+                top: 10px;
+                right: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -666,7 +757,12 @@
             };
 
             // Preload all
-            Object.values(sounds).forEach(function(s) { s.preload = 'auto'; });
+            Object.values(sounds).forEach(function(s) { 
+                s.preload = 'auto';
+                s.load();
+            });
+
+            let audioUnlocked = false;
 
             function playSound(name, volume) {
                 var s = sounds[name];
@@ -676,14 +772,24 @@
                 s.play().catch(function(){});
             }
 
-            // On first tap, play silent to unlock all audio on iOS
-            function unlockAllAudio() {
+            // iOS requires audio played synchronously in touch event
+            function unlockAllAudio(e) {
+                if (audioUnlocked) return;
+                
+                // Play each sound at volume 0 to unlock
                 Object.values(sounds).forEach(function(s) {
-                    s.play().then(function() { s.pause(); s.currentTime = 0; }).catch(function(){});
+                    s.muted = true;
+                    s.play().catch(function(){});
+                    s.pause();
+                    s.muted = false;
+                    s.currentTime = 0;
                 });
-                document.removeEventListener('touchstart', unlockAllAudio);
+                
+                audioUnlocked = true;
             }
+            
             document.addEventListener('touchstart', unlockAllAudio);
+            document.addEventListener('click', unlockAllAudio);
 
             function toggleFullscreen() {
                 const doc = document.documentElement;
