@@ -402,7 +402,7 @@
     <div class="particles" id="particles"></div>
     <div class="container">
         <div class="cabinet">
-            <h1 class="title">🎰 MR. HOUSE 🎰</h1>
+            <h1 class="title" onclick="toggleFullscreen()">🎰 MR. HOUSE 🎰</h1>
             
             <div class="counters">
                 <div class="counter">
@@ -498,6 +498,36 @@
     </div>
 
     <script>
+        function toggleFullscreen() {
+    const doc = document.documentElement;
+
+    if (
+        !document.fullscreenElement &&
+        !document.mozFullScreenElement &&
+        !document.webkitFullscreenElement &&
+        !document.msFullscreenElement
+    ) {
+        if (doc.requestFullscreen) {
+            doc.requestFullscreen();
+        } else if (doc.mozRequestFullScreen) {
+            doc.mozRequestFullScreen();
+        } else if (doc.webkitRequestFullscreen) {
+            doc.webkitRequestFullscreen();
+        } else if (doc.msRequestFullscreen) {
+            doc.msRequestFullscreen();
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        } else if (document.mozCancelFullScreen) {
+            document.mozCancelFullScreen();
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+        }
+    }
+}
         let state = null;
         let isSpinning = false;
         
