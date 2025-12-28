@@ -41,7 +41,23 @@
             text-shadow: 0 0 20px #ffd700, 0 0 40px #ff6600;
             margin-bottom: 20px;
             letter-spacing: 4px;
+        }
+
+        .fullscreen-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #ffd700;
+            color: #ffd700;
+            font-size: 1.5em;
+            padding: 5px 10px;
+            border-radius: 5px;
             cursor: pointer;
+        }
+
+        .fullscreen-btn:hover {
+            background: rgba(255, 215, 0, 0.2);
         }
 
         .counters {
@@ -401,11 +417,124 @@
         }
 
         @media (max-width: 768px) {
-            .modifiers {
-                grid-template-columns: repeat(2, 1fr);
+            .container {
+                padding: 10px;
+            }
+            .cabinet {
+                padding: 15px;
+                border-width: 4px;
             }
             .title {
+                font-size: 1.8em;
+                letter-spacing: 2px;
+            }
+            .counters {
+                grid-template-columns: repeat(3, 1fr);
+                gap: 8px;
+            }
+            .counter {
+                padding: 10px 5px;
+            }
+            .counter-label {
+                font-size: 0.7em;
+            }
+            .counter-value {
+                font-size: 1.8em;
+            }
+            .counter-btn {
+                padding: 3px 10px;
+                font-size: 1em;
+            }
+            .modifiers {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+            }
+            .modifier {
+                padding: 10px 5px;
+            }
+            .modifier-label {
+                font-size: 0.65em;
+            }
+            .modifier-value {
+                font-size: 1.2em;
+            }
+            .reels-container {
+                padding: 15px;
+                min-height: 180px;
+                gap: 10px;
+            }
+            .reel {
+                width: 60px;
+                height: 120px;
+            }
+            .reel-face {
+                height: 120px;
+                font-size: 3em;
+            }
+            .result-banner {
+                font-size: 2.5em;
+                min-height: 50px;
+            }
+            .payout-tray {
+                min-height: 80px;
+                padding: 10px;
+            }
+            .payout-item {
                 font-size: 2em;
+                margin: 5px;
+            }
+            .controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .treasure-input {
+                width: 100%;
+                justify-content: center;
+            }
+            .treasure-input label {
+                font-size: 1em;
+            }
+            .treasure-input input {
+                width: 60px;
+                padding: 8px;
+                font-size: 1.2em;
+            }
+            .spin-button {
+                width: 100%;
+                padding: 20px;
+                font-size: 1.8em;
+            }
+            .action-buttons {
+                justify-content: center;
+            }
+            .action-btn {
+                padding: 10px 15px;
+                font-size: 1em;
+            }
+            .event-log {
+                padding: 10px;
+                max-height: 250px;
+            }
+            .log-entry {
+                font-size: 0.75em;
+                padding: 8px;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .title {
+                font-size: 1.5em;
+            }
+            .counter-value {
+                font-size: 1.5em;
+            }
+            .reel {
+                width: 50px;
+                height: 100px;
+            }
+            .reel-face {
+                height: 100px;
+                font-size: 2.5em;
             }
         }
     </style>
@@ -414,7 +543,8 @@
     <div class="particles" id="particles"></div>
     <div class="container">
         <div class="cabinet">
-            <h1 class="title" onclick="toggleFullscreen()">🎰 MR. HOUSE 🎰</h1>
+            <h1 class="title">🎰 MR. HOUSE 🎰</h1>
+            <button class="fullscreen-btn" id="fullscreen-btn">⛶</button>
             
             <div class="counters">
                 <div class="counter">
@@ -1179,8 +1309,8 @@
                     btn.addEventListener('touchend', stopHold);
                 });
 
-                // Make title clickable for fullscreen
-                document.querySelector('.title').addEventListener('click', toggleFullscreen);
+                // Make fullscreen button work
+                document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
 
                 // Initial UI update
                 updateUI();
