@@ -88,6 +88,8 @@
             font-size: 1.2em;
             border-radius: 5px;
             transition: all 0.2s;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         .counter-btn:hover {
@@ -397,6 +399,15 @@
             0% { transform: translate(0, 0) scale(1); opacity: 1; }
             100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
         }
+
+        @media (max-width: 768px) {
+            .modifiers {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .title {
+                font-size: 2em;
+            }
+        }
     </style>
 </head>
 <body>
@@ -435,7 +446,7 @@
             <div class="modifiers">
                 <div class="modifier" id="mod-barbarian">
                     <div class="modifier-label">BARBARIAN CLASS</div>
-                    <div class="modifier-value" onclick="toggleBarbarian()">OFF</div>
+                    <div class="modifier-value" id="barbarian-toggle" style="cursor:pointer;">OFF</div>
                 </div>
                 <div class="modifier">
                     <div class="modifier-label">TOKEN MULT</div>
@@ -472,23 +483,16 @@
             <div class="controls">
                 <div class="treasure-input">
                     <label>SPEND TREASURES:</label>
-                    <input
-                            type="number"
-                            id="treasure-spend"
-                            value="0"
-                            min="0"
-                            max="4"
-                            step="1"
-                        />
+                    <input type="number" id="treasure-spend" value="0" min="0" max="4" step="1" />
                 </div>
-                <button class="spin-button" id="spin-btn" onclick="spin()">PULL LEVER</button>
+                <button class="spin-button" id="spin-btn">PULL LEVER</button>
             </div>
 
             <div class="action-buttons">
-                <button class="action-btn" onclick="undo()">UNDO</button>
-                <button class="action-btn" onclick="save()">SAVE</button>
-                <button class="action-btn" onclick="load()">LOAD</button>
-                <button class="action-btn" onclick="reset()">RESET</button>
+                <button class="action-btn" id="undo-btn">UNDO</button>
+                <button class="action-btn" id="save-btn">SAVE</button>
+                <button class="action-btn" id="load-btn">LOAD</button>
+                <button class="action-btn" id="reset-btn">RESET</button>
             </div>
 
             <div class="event-log">
@@ -499,263 +503,305 @@
     </div>
 
     <script>
-        const MAX_TREASURE_SPEND = 4;
-        const STORAGE_KEY = 'mr_house_save';
+        (function() {
+            'use strict';
 
-        // Default state
-        const defaultState = {
-            life: 40,
-            robots: 0,
-            treasures: 0,
-            token_multiplier: 0,
-            lifegain_multiplier: 0,
-            etb_lifegain_sources: 0,
-            barbarian_class_active: false,
-            jackpot_count: 0,
-            event_log: []
-        };
+            const MAX_TREASURE_SPEND = 4;
+            const STORAGE_KEY = 'mr_house_save';
 
-        let state = { ...defaultState };
-        let isSpinning = false;
-
-        // Load sound effects
-        const pullSound = new Audio('/static/PULL.wav');
-        const nextSound = new Audio('/static/NEXT.wav');
-        const missSound = new Audio('/static/MISS.wav');
-        const hitSound = new Audio('/static/HIT.wav');
-        const jackpotSound = new Audio('/static/JACKPOT.wav');
-
-        function playSound(audio) {
-            audio.currentTime = 0;
-            audio.play().catch(e => console.log('Audio play failed:', e));
-        }
-
-        function toggleFullscreen() {
-            const doc = document.documentElement;
-
-            if (
-                !document.fullscreenElement &&
-                !document.mozFullScreenElement &&
-                !document.webkitFullscreenElement &&
-                !document.msFullscreenElement
-            ) {
-                if (doc.requestFullscreen) {
-                    doc.requestFullscreen();
-                } else if (doc.mozRequestFullScreen) {
-                    doc.mozRequestFullScreen();
-                } else if (doc.webkitRequestFullscreen) {
-                    doc.webkitRequestFullscreen();
-                } else if (doc.msRequestFullscreen) {
-                    doc.msRequestFullscreen();
-                }
-            } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                } else if (document.mozCancelFullScreen) {
-                    document.mozCancelFullScreen();
-                } else if (document.webkitExitFullscreen) {
-                    document.webkitExitFullscreen();
-                } else if (document.msExitFullscreen) {
-                    document.msExitFullscreen();
-                }
-            }
-        }
-
-        function updateUI() {
-            document.getElementById('life').textContent = formatNumber(state.life);
-            document.getElementById('robots').textContent = formatNumber(state.robots);
-            document.getElementById('treasures').textContent = formatNumber(state.treasures);
-            document.getElementById('token-mult').textContent = state.token_multiplier;
-            document.getElementById('lifegain-mult').textContent = state.lifegain_multiplier;
-            document.getElementById('etb-sources').textContent = state.etb_lifegain_sources;
-            
-            const barbarianMod = document.getElementById('mod-barbarian');
-            const barbarianValue = barbarianMod.querySelector('.modifier-value');
-            barbarianValue.textContent = state.barbarian_class_active ? 'ON' : 'OFF';
-            barbarianMod.classList.toggle('active', state.barbarian_class_active);
-            
-            updateLog();
-        }
-
-        function formatNumber(num) {
-            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-            if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
-            return num;
-        }
-
-        // Client-side spin logic (replaces /api/spin)
-        function performSpin(treasures_spent) {
-            const numDice = 1 + treasures_spent;
-            let diceRolls, ignoredRolls = [];
-
-            // Roll dice
-            if (state.barbarian_class_active) {
-                const totalRolled = numDice * 2;
-                let rolls = [];
-                for (let i = 0; i < totalRolled; i++) {
-                    rolls.push(Math.floor(Math.random() * 6) + 1);
-                }
-                rolls.sort((a, b) => a - b);
-                ignoredRolls = rolls.slice(0, numDice);
-                diceRolls = rolls.slice(numDice);
-            } else {
-                diceRolls = [];
-                for (let i = 0; i < numDice; i++) {
-                    diceRolls.push(Math.floor(Math.random() * 6) + 1);
-                }
-            }
-
-            // Evaluate rolls
-            let baseRobots = 0;
-            let baseTreasures = 0;
-            let hitCount = 0;
-            let jackpotCount = 0;
-            let missCount = 0;
-
-            for (const die of diceRolls) {
-                if (die <= 3) {
-                    missCount++;
-                } else if (die <= 5) {
-                    hitCount++;
-                    baseRobots++;
-                } else {
-                    jackpotCount++;
-                    baseRobots++;
-                    baseTreasures++;
-                }
-            }
-
-            // Outcome
-            let outcome;
-            if (jackpotCount > 0) {
-                outcome = 'JACKPOT';
-                state.jackpot_count += jackpotCount;
-            } else if (hitCount > 0) {
-                outcome = 'HIT';
-            } else {
-                outcome = 'MISS';
-            }
-
-            // Token multiplier (2^mult)
-            const tokenMult = Math.pow(2, state.token_multiplier);
-            const robotsCreated = baseRobots * tokenMult;
-            const treasuresCreated = baseTreasures * tokenMult;
-
-            // Lifegain logic
-            let lifeGained = 0;
-            if (state.etb_lifegain_sources > 0) {
-                const baseLife = robotsCreated * state.etb_lifegain_sources;
-                const lifeMult = Math.pow(2, state.lifegain_multiplier);
-                lifeGained = baseLife * lifeMult;
-            }
-
-            // Apply rewards
-            state.robots += robotsCreated;
-            state.treasures += treasuresCreated;
-            state.life += lifeGained;
-
-            // Create event
-            const event = {
-                timestamp: new Date().toISOString(),
-                treasures_spent: treasures_spent,
-                dice_rolls: diceRolls,
-                ignored_rolls: ignoredRolls,
-                outcome: outcome,
-                miss_count: missCount,
-                hit_count: hitCount,
-                jackpot_count: jackpotCount,
-                robots_created: robotsCreated,
-                treasures_created: treasuresCreated,
-                life_gained: lifeGained
+            // Default state
+            const defaultState = {
+                life: 40,
+                robots: 0,
+                treasures: 0,
+                token_multiplier: 0,
+                lifegain_multiplier: 0,
+                etb_lifegain_sources: 0,
+                barbarian_class_active: false,
+                jackpot_count: 0,
+                event_log: []
             };
 
-            state.event_log.push(event);
+            // Initialize state with a deep copy
+            let state = JSON.parse(JSON.stringify(defaultState));
+            let isSpinning = false;
 
-            return event;
-        }
-
-        async function spin() {
-            if (isSpinning) return;
-
-            let treasureSpend = parseInt(document.getElementById('treasure-spend').value) || 0;
-            treasureSpend = Math.min(treasureSpend, MAX_TREASURE_SPEND);
-
-            if (treasureSpend > state.treasures) {
-                alert('Not enough treasures!');
-                return;
+            // Load sound effects (gracefully handle missing files)
+            function createAudio(filename) {
+                const audio = new Audio(filename);
+                audio.preload = 'auto';
+                return audio;
             }
 
-            playSound(pullSound);
+            const pullSound = createAudio('PULL.wav');
+            const nextSound = createAudio('NEXT.wav');
+            const missSound = createAudio('MISS.wav');
+            const hitSound = createAudio('HIT.wav');
+            const jackpotSound = createAudio('JACKPOT.wav');
 
-            isSpinning = true;
-            document.getElementById('spin-btn').disabled = true;
-            document.getElementById('result').textContent = '';
-            document.getElementById('payout').innerHTML = '';
+            function playSound(audio) {
+                if (!audio) return;
+                try {
+                    audio.currentTime = 0;
+                    audio.play().catch(function() {});
+                } catch (e) {}
+            }
 
-            // Deduct treasures immediately
-            state.treasures -= treasureSpend;
-            updateUI();
+            function toggleFullscreen() {
+                const doc = document.documentElement;
 
-            // Perform spin (client-side)
-            const event = performSpin(treasureSpend);
+                if (!document.fullscreenElement &&
+                    !document.mozFullScreenElement &&
+                    !document.webkitFullscreenElement &&
+                    !document.msFullscreenElement) {
+                    if (doc.requestFullscreen) {
+                        doc.requestFullscreen();
+                    } else if (doc.mozRequestFullScreen) {
+                        doc.mozRequestFullScreen();
+                    } else if (doc.webkitRequestFullscreen) {
+                        doc.webkitRequestFullscreen();
+                    } else if (doc.msRequestFullscreen) {
+                        doc.msRequestFullscreen();
+                    }
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.mozCancelFullScreen) {
+                        document.mozCancelFullScreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    } else if (document.msExitFullscreen) {
+                        document.msExitFullscreen();
+                    }
+                }
+            }
 
-            // Animate
-            await animateSpin(event);
+            function updateUI() {
+                if (!state) return;
+                
+                document.getElementById('life').textContent = formatNumber(state.life);
+                document.getElementById('robots').textContent = formatNumber(state.robots);
+                document.getElementById('treasures').textContent = formatNumber(state.treasures);
+                document.getElementById('token-mult').textContent = state.token_multiplier;
+                document.getElementById('lifegain-mult').textContent = state.lifegain_multiplier;
+                document.getElementById('etb-sources').textContent = state.etb_lifegain_sources;
 
-            // Update UI with results
-            updateUI();
+                const barbarianMod = document.getElementById('mod-barbarian');
+                const barbarianValue = document.getElementById('barbarian-toggle');
+                barbarianValue.textContent = state.barbarian_class_active ? 'ON' : 'OFF';
+                barbarianMod.classList.toggle('active', state.barbarian_class_active);
 
-            document.getElementById('spin-btn').disabled = false;
-            isSpinning = false;
-        }
+                updateLog();
+            }
 
-        async function animateSpin(event) {
-            const reelsContainer = document.getElementById('reels');
-            reelsContainer.innerHTML = '';
-            reelsContainer.classList.add('shake');
+            function formatNumber(num) {
+                if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+                if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
+                return num;
+            }
 
-            const reels = [];
-            const finalCount = event.dice_rolls.length;
+            // Client-side spin logic
+            function performSpin(treasures_spent) {
+                const numDice = 1 + treasures_spent;
+                let diceRolls = [];
+                let ignoredRolls = [];
 
-            function createReel() {
-                const reel = document.createElement('div');
-                reel.className = 'reel';
-
-                const strip = document.createElement('div');
-                strip.className = 'reel-strip';
-
-                for (let i = 1; i <= 6; i++) {
-                    const face = document.createElement('div');
-                    face.className = 'reel-face';
-                    face.textContent = i;
-                    strip.appendChild(face);
+                // Roll dice
+                if (state.barbarian_class_active) {
+                    const totalRolled = numDice * 2;
+                    let rolls = [];
+                    for (let i = 0; i < totalRolled; i++) {
+                        rolls.push(Math.floor(Math.random() * 6) + 1);
+                    }
+                    rolls.sort(function(a, b) { return a - b; });
+                    ignoredRolls = rolls.slice(0, numDice);
+                    diceRolls = rolls.slice(numDice);
+                } else {
+                    for (let i = 0; i < numDice; i++) {
+                        diceRolls.push(Math.floor(Math.random() * 6) + 1);
+                    }
                 }
 
-                reel.appendChild(strip);
-                reelsContainer.appendChild(reel);
-                return { element: reel, strip };
+                // Evaluate rolls
+                let baseRobots = 0;
+                let baseTreasures = 0;
+                let hitCount = 0;
+                let jackpotCount = 0;
+                let missCount = 0;
+
+                for (let i = 0; i < diceRolls.length; i++) {
+                    const die = diceRolls[i];
+                    if (die <= 3) {
+                        missCount++;
+                    } else if (die <= 5) {
+                        hitCount++;
+                        baseRobots++;
+                    } else {
+                        jackpotCount++;
+                        baseRobots++;
+                        baseTreasures++;
+                    }
+                }
+
+                // Outcome
+                let outcome;
+                if (jackpotCount > 0) {
+                    outcome = 'JACKPOT';
+                    state.jackpot_count += jackpotCount;
+                } else if (hitCount > 0) {
+                    outcome = 'HIT';
+                } else {
+                    outcome = 'MISS';
+                }
+
+                // Token multiplier (2^mult)
+                const tokenMult = Math.pow(2, state.token_multiplier);
+                const robotsCreated = baseRobots * tokenMult;
+                const treasuresCreated = baseTreasures * tokenMult;
+
+                // Lifegain logic
+                let lifeGained = 0;
+                if (state.etb_lifegain_sources > 0) {
+                    const baseLife = robotsCreated * state.etb_lifegain_sources;
+                    const lifeMult = Math.pow(2, state.lifegain_multiplier);
+                    lifeGained = baseLife * lifeMult;
+                }
+
+                // Apply rewards
+                state.robots += robotsCreated;
+                state.treasures += treasuresCreated;
+                state.life += lifeGained;
+
+                // Create event
+                const event = {
+                    timestamp: new Date().toISOString(),
+                    treasures_spent: treasures_spent,
+                    dice_rolls: diceRolls,
+                    ignored_rolls: ignoredRolls,
+                    outcome: outcome,
+                    miss_count: missCount,
+                    hit_count: hitCount,
+                    jackpot_count: jackpotCount,
+                    robots_created: robotsCreated,
+                    treasures_created: treasuresCreated,
+                    life_gained: lifeGained
+                };
+
+                state.event_log.push(event);
+
+                return event;
             }
 
-            // Build ONLY the final number of reels
-            for (let i = 0; i < finalCount; i++) {
-                reels.push(createReel());
+            async function spin() {
+                if (isSpinning) return;
+
+                let treasureSpend = parseInt(document.getElementById('treasure-spend').value) || 0;
+                treasureSpend = Math.min(treasureSpend, MAX_TREASURE_SPEND);
+
+                if (treasureSpend > state.treasures) {
+                    alert('Not enough treasures!');
+                    return;
+                }
+
+                playSound(pullSound);
+
+                isSpinning = true;
+                document.getElementById('spin-btn').disabled = true;
+                document.getElementById('result').textContent = '';
+                document.getElementById('payout').innerHTML = '';
+
+                // Deduct treasures immediately
+                state.treasures -= treasureSpend;
+                updateUI();
+
+                // Perform spin (client-side)
+                const event = performSpin(treasureSpend);
+
+                // Animate
+                await animateSpin(event);
+
+                // Update UI with results
+                updateUI();
+
+                document.getElementById('spin-btn').disabled = false;
+                isSpinning = false;
             }
 
-            // Initial spin
-            reels.forEach(r => r.element.classList.add('spinning'));
-            await sleep(800);
+            async function animateSpin(event) {
+                const reelsContainer = document.getElementById('reels');
+                reelsContainer.innerHTML = '';
+                reelsContainer.classList.add('shake');
 
-            const hasBarbarian = event.ignored_rolls && event.ignored_rolls.length > 0;
+                const reels = [];
+                const finalCount = event.dice_rolls.length;
 
-            // Phase 1: show WORSE rolls
-            if (hasBarbarian) {
+                function createReel() {
+                    const reel = document.createElement('div');
+                    reel.className = 'reel';
+
+                    const strip = document.createElement('div');
+                    strip.className = 'reel-strip';
+
+                    for (let i = 1; i <= 6; i++) {
+                        const face = document.createElement('div');
+                        face.className = 'reel-face';
+                        face.textContent = i;
+                        strip.appendChild(face);
+                    }
+
+                    reel.appendChild(strip);
+                    reelsContainer.appendChild(reel);
+                    return { element: reel, strip: strip };
+                }
+
+                // Build ONLY the final number of reels
+                for (let i = 0; i < finalCount; i++) {
+                    reels.push(createReel());
+                }
+
+                // Initial spin
+                reels.forEach(function(r) { r.element.classList.add('spinning'); });
+                await sleep(800);
+
+                const hasBarbarian = event.ignored_rolls && event.ignored_rolls.length > 0;
+
+                // Phase 1: show WORSE rolls
+                if (hasBarbarian) {
+                    for (let i = 0; i < reels.length; i++) {
+                        const reel = reels[i];
+                        const badValue = event.ignored_rolls[i];
+
+                        reel.element.classList.remove('spinning');
+                        reel.strip.style.transform = 'translateY(' + (-(badValue - 1) * 200) + 'px)';
+                        reel.element.classList.add('ignored');
+
+                        reelsContainer.classList.add('shake');
+                        await sleep(100);
+                        reelsContainer.classList.remove('shake');
+                        await sleep(150);
+                    }
+
+                    await sleep(300);
+
+                    // Pull lever again for the reroll
+                    playSound(pullSound);
+
+                    // Respins
+                    reels.forEach(function(r) {
+                        r.element.classList.add('spinning');
+                        r.element.classList.remove('ignored');
+                    });
+
+                    await sleep(600);
+                }
+
+                // Phase 2: land FINAL results
                 for (let i = 0; i < reels.length; i++) {
                     const reel = reels[i];
-                    const badValue = event.ignored_rolls[i];
+                    const finalValue = event.dice_rolls[i];
 
                     reel.element.classList.remove('spinning');
-                    reel.strip.style.transform = `translateY(${-(badValue - 1) * 200}px)`;
-                    reel.element.classList.add('ignored');
+                    reel.strip.style.transform = 'translateY(' + (-(finalValue - 1) * 200) + 'px)';
 
                     reelsContainer.classList.add('shake');
                     await sleep(100);
@@ -763,345 +809,361 @@
                     await sleep(150);
                 }
 
+                reelsContainer.classList.remove('shake');
+
+                // Highlight results
                 await sleep(300);
-
-                // Pull lever again for the reroll
-                playSound(pullSound);
-
-                // Respins
-                reels.forEach(r => {
-                    r.element.classList.add('spinning');
-                    r.element.classList.remove('ignored');
+                event.dice_rolls.forEach(function(value, idx) {
+                    if (value === 6) {
+                        reels[idx].element.classList.add('winner');
+                    } else if (value >= 4) {
+                        reels[idx].element.style.borderColor = '#00ff88';
+                    }
                 });
 
-                await sleep(600);
-            }
+                // Result banner
+                await sleep(300);
+                const resultBanner = document.getElementById('result');
+                let resultText = event.outcome;
 
-            // Phase 2: land FINAL results
-            for (let i = 0; i < reels.length; i++) {
-                const reel = reels[i];
-                const finalValue = event.dice_rolls[i];
-
-                reel.element.classList.remove('spinning');
-                reel.strip.style.transform = `translateY(${-(finalValue - 1) * 200}px)`;
-
-                reelsContainer.classList.add('shake');
-                await sleep(100);
-                reelsContainer.classList.remove('shake');
-                await sleep(150);
-            }
-
-            reelsContainer.classList.remove('shake');
-
-            // Highlight results
-            await sleep(300);
-            event.dice_rolls.forEach((value, idx) => {
-                if (value === 6) {
-                    reels[idx].element.classList.add('winner');
-                } else if (value >= 4) {
-                    reels[idx].element.style.borderColor = '#00ff88';
+                if (event.jackpot_count > 1) {
+                    resultText += ' x' + event.jackpot_count;
+                } else if (event.hit_count > 1 && event.jackpot_count === 0) {
+                    resultText += ' x' + event.hit_count;
                 }
-            });
 
-            // Result banner
-            await sleep(300);
-            const resultBanner = document.getElementById('result');
-            let resultText = event.outcome;
+                resultBanner.textContent = resultText;
+                resultBanner.className = 'result-banner ' + event.outcome;
 
-            if (event.jackpot_count > 1) {
-                resultText += ` x${event.jackpot_count}`;
-            } else if (event.hit_count > 1 && event.jackpot_count === 0) {
-                resultText += ` x${event.hit_count}`;
-            }
-
-            resultBanner.textContent = resultText;
-            resultBanner.className = 'result-banner ' + event.outcome;
-
-            // Sounds + effects
-            if (event.outcome === 'JACKPOT') {
-                for (let i = 0; i < event.jackpot_count; i++) {
-                    setTimeout(() => {
-                        const s = jackpotSound.cloneNode();
-                        s.volume = Math.min(1, 0.6 + i * 0.15);
-                        s.play().catch(() => {});
-                    }, i * 400);
+                // Sounds + effects
+                if (event.outcome === 'JACKPOT') {
+                    for (let i = 0; i < event.jackpot_count; i++) {
+                        (function(idx) {
+                            setTimeout(function() {
+                                const s = jackpotSound.cloneNode();
+                                s.volume = Math.min(1, 0.6 + idx * 0.15);
+                                s.play().catch(function() {});
+                            }, idx * 400);
+                        })(i);
+                    }
+                    createParticles();
+                } else if (event.outcome === 'HIT') {
+                    for (let i = 0; i < event.hit_count; i++) {
+                        (function(idx) {
+                            setTimeout(function() {
+                                const s = hitSound.cloneNode();
+                                s.volume = Math.min(1, 0.6 + idx * 0.15);
+                                s.play().catch(function() {});
+                            }, idx * 300);
+                        })(i);
+                    }
+                } else {
+                    playSound(missSound);
                 }
-                createParticles();
-            } else if (event.outcome === 'HIT') {
-                for (let i = 0; i < event.hit_count; i++) {
-                    setTimeout(() => {
-                        const s = hitSound.cloneNode();
-                        s.volume = Math.min(1, 0.6 + i * 0.15);
-                        s.play().catch(() => {});
-                    }, i * 300);
+
+                // Payout
+                await sleep(500);
+                showPayout(event);
+                updateUI();
+            }
+
+            function showPayout(event) {
+                const payout = document.getElementById('payout');
+
+                // Robots
+                const robotCount = Math.min(event.robots_created, 20);
+                for (let i = 0; i < robotCount; i++) {
+                    (function(idx) {
+                        setTimeout(function() {
+                            const robot = document.createElement('div');
+                            robot.className = 'payout-item';
+                            robot.textContent = '🤖';
+                            robot.style.animationDelay = (idx * 0.05) + 's';
+                            payout.appendChild(robot);
+                        }, idx * 50);
+                    })(i);
                 }
-            } else {
-                playSound(missSound);
-            }
 
-            // Payout
-            await sleep(500);
-            showPayout(event);
-            updateUI();
-        }
+                // Treasures
+                const treasureCount = Math.min(event.treasures_created, 20);
+                for (let i = 0; i < treasureCount; i++) {
+                    (function(idx) {
+                        setTimeout(function() {
+                            const treasure = document.createElement('div');
+                            treasure.className = 'payout-item';
+                            treasure.textContent = '💎';
+                            treasure.style.animationDelay = (idx * 0.05) + 's';
+                            payout.appendChild(treasure);
+                        }, idx * 50);
+                    })(i);
+                }
 
-        function showPayout(event) {
-            const payout = document.getElementById('payout');
-            
-            // Robots
-            for (let i = 0; i < Math.min(event.robots_created, 20); i++) {
-                setTimeout(() => {
-                    const robot = document.createElement('div');
-                    robot.className = 'payout-item';
-                    robot.textContent = '🤖';
-                    robot.style.animationDelay = `${i * 0.05}s`;
-                    payout.appendChild(robot);
-                }, i * 50);
-            }
-            
-            // Treasures
-            for (let i = 0; i < Math.min(event.treasures_created, 20); i++) {
-                setTimeout(() => {
-                    const treasure = document.createElement('div');
-                    treasure.className = 'payout-item';
-                    treasure.textContent = '💎';
-                    treasure.style.animationDelay = `${i * 0.05}s`;
-                    payout.appendChild(treasure);
-                }, i * 50);
-            }
-            
-            // Lifegain float
-            if (event.life_gained > 0) {
-                setTimeout(() => {
-                    const lifeFloat = document.createElement('div');
-                    lifeFloat.className = 'lifegain-float';
-                    lifeFloat.textContent = `+${formatNumber(event.life_gained)}`;
-                    lifeFloat.style.left = '50%';
-                    lifeFloat.style.top = '50%';
-                    payout.appendChild(lifeFloat);
-                    
-                    // Animate life counter
-                    animateLifeCounter(state.life - event.life_gained, state.life);
-                }, 200);
-            }
-        }
+                // Lifegain float
+                if (event.life_gained > 0) {
+                    setTimeout(function() {
+                        const lifeFloat = document.createElement('div');
+                        lifeFloat.className = 'lifegain-float';
+                        lifeFloat.textContent = '+' + formatNumber(event.life_gained);
+                        lifeFloat.style.left = '50%';
+                        lifeFloat.style.top = '50%';
+                        payout.appendChild(lifeFloat);
 
-        function animateLifeCounter(start, end) {
-            const duration = Math.min(2000, 500 + Math.log10(Math.abs(end - start) + 1) * 500);
-            const startTime = Date.now();
-            
-            function update() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const eased = 1 - Math.pow(1 - progress, 3);
-                const current = Math.floor(start + (end - start) * eased);
-                
-                document.getElementById('life').textContent = formatNumber(current);
-                
-                if (progress < 1) {
-                    requestAnimationFrame(update);
+                        // Animate life counter
+                        animateLifeCounter(state.life - event.life_gained, state.life);
+                    }, 200);
                 }
             }
-            
-            update();
-        }
 
-        function createParticles() {
-            const container = document.getElementById('particles');
-            const centerX = window.innerWidth / 2;
-            const centerY = window.innerHeight / 2;
-            
-            for (let i = 0; i < 50; i++) {
-                const particle = document.createElement('div');
-                particle.className = 'particle';
-                particle.style.left = centerX + 'px';
-                particle.style.top = centerY + 'px';
-                
-                const angle = (Math.PI * 2 * i) / 50;
-                const distance = 200 + Math.random() * 300;
-                const tx = Math.cos(angle) * distance;
-                const ty = Math.sin(angle) * distance;
-                
-                particle.style.setProperty('--tx', tx + 'px');
-                particle.style.setProperty('--ty', ty + 'px');
-                
-                container.appendChild(particle);
-                
-                setTimeout(() => particle.remove(), 1000);
+            function animateLifeCounter(start, end) {
+                const duration = Math.min(2000, 500 + Math.log10(Math.abs(end - start) + 1) * 500);
+                const startTime = Date.now();
+
+                function update() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const eased = 1 - Math.pow(1 - progress, 3);
+                    const current = Math.floor(start + (end - start) * eased);
+
+                    document.getElementById('life').textContent = formatNumber(current);
+
+                    if (progress < 1) {
+                        requestAnimationFrame(update);
+                    }
+                }
+
+                update();
             }
-        }
 
-        function toggleBarbarian() {
-            playSound(nextSound);
-            state.barbarian_class_active = !state.barbarian_class_active;
-            updateUI();
-        }
+            function createParticles() {
+                const container = document.getElementById('particles');
+                const centerX = window.innerWidth / 2;
+                const centerY = window.innerHeight / 2;
 
-        function undo() {
-            playSound(nextSound);
-            if (!state.event_log.length) {
-                alert('Nothing to undo');
-                return;
+                for (let i = 0; i < 50; i++) {
+                    const particle = document.createElement('div');
+                    particle.className = 'particle';
+                    particle.style.left = centerX + 'px';
+                    particle.style.top = centerY + 'px';
+
+                    const angle = (Math.PI * 2 * i) / 50;
+                    const distance = 200 + Math.random() * 300;
+                    const tx = Math.cos(angle) * distance;
+                    const ty = Math.sin(angle) * distance;
+
+                    particle.style.setProperty('--tx', tx + 'px');
+                    particle.style.setProperty('--ty', ty + 'px');
+
+                    container.appendChild(particle);
+
+                    (function(p) {
+                        setTimeout(function() { p.remove(); }, 1000);
+                    })(particle);
+                }
             }
-            
-            const lastEvent = state.event_log.pop();
-            
-            // Revert state changes
-            state.robots -= lastEvent.robots_created;
-            state.treasures -= lastEvent.treasures_created;
-            state.treasures += lastEvent.treasures_spent;
-            state.life -= lastEvent.life_gained;
-            state.jackpot_count -= lastEvent.jackpot_count;
-            
-            updateUI();
-            document.getElementById('reels').innerHTML = '';
-            document.getElementById('result').textContent = '';
-            document.getElementById('payout').innerHTML = '';
-        }
 
-        function save() {
-            playSound(nextSound);
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-                alert('Game saved!');
-            } catch (e) {
-                alert('Failed to save: ' + e.message);
+            function toggleBarbarian() {
+                playSound(nextSound);
+                state.barbarian_class_active = !state.barbarian_class_active;
+                updateUI();
             }
-        }
 
-        function load() {
-            playSound(nextSound);
-            try {
-                const saved = localStorage.getItem(STORAGE_KEY);
-                if (!saved) {
-                    alert('No save file found');
+            function undo() {
+                playSound(nextSound);
+                if (!state.event_log || !state.event_log.length) {
+                    alert('Nothing to undo');
                     return;
                 }
-                state = JSON.parse(saved);
-                updateUI();
-                alert('Game loaded!');
-            } catch (e) {
-                alert('Failed to load: ' + e.message);
-            }
-        }
 
-        function reset() {
-            if (confirm('Reset all state?')) {
-                playSound(nextSound);
-                state = { ...defaultState, event_log: [] };
+                const lastEvent = state.event_log.pop();
+
+                // Revert state changes
+                state.robots -= lastEvent.robots_created;
+                state.treasures -= lastEvent.treasures_created;
+                state.treasures += lastEvent.treasures_spent;
+                state.life -= lastEvent.life_gained;
+                state.jackpot_count -= lastEvent.jackpot_count;
+
                 updateUI();
                 document.getElementById('reels').innerHTML = '';
                 document.getElementById('result').textContent = '';
                 document.getElementById('payout').innerHTML = '';
             }
-        }
 
-        // Hold-to-increment logic
-        let holdTimeout = null;
-        let holdInterval = null;
-        let holdSpeed = 200;
-        let holdStep = 1;
+            function save() {
+                playSound(nextSound);
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+                    alert('Game saved!');
+                } catch (e) {
+                    alert('Failed to save: ' + e.message);
+                }
+            }
 
-        function applyDelta(field, delta) {
-            playSound(nextSound);
+            function load() {
+                playSound(nextSound);
+                try {
+                    const saved = localStorage.getItem(STORAGE_KEY);
+                    if (!saved) {
+                        alert('No save file found');
+                        return;
+                    }
+                    state = JSON.parse(saved);
+                    updateUI();
+                    alert('Game loaded!');
+                } catch (e) {
+                    alert('Failed to load: ' + e.message);
+                }
+            }
 
-            let value = state[field] + delta;
+            function reset() {
+                if (confirm('Reset all state?')) {
+                    playSound(nextSound);
+                    state = JSON.parse(JSON.stringify(defaultState));
+                    updateUI();
+                    document.getElementById('reels').innerHTML = '';
+                    document.getElementById('result').textContent = '';
+                    document.getElementById('payout').innerHTML = '';
+                }
+            }
 
-            const minimums = {
-                life: 0,
-                robots: 0,
-                treasures: 0,
-                token_multiplier: 0,
-                lifegain_multiplier: 0,
-                etb_lifegain_sources: 0
-            };
+            // Hold-to-increment logic
+            let holdTimeout = null;
+            let holdInterval = null;
+            let holdSpeed = 200;
+            let holdStep = 1;
 
-            value = Math.max(minimums[field], value);
-            state[field] = value;
-            updateUI();
-        }
+            function applyDelta(field, delta) {
+                playSound(nextSound);
 
-        function startHold(field, delta) {
-            holdSpeed = 200;
-            holdStep = 1;
+                if (!state) return;
 
-            applyDelta(field, delta);
+                let value = state[field] + delta;
 
-            holdTimeout = setTimeout(() => {
-                holdInterval = setInterval(() => {
-                    applyDelta(field, delta * holdStep);
+                const minimums = {
+                    life: 0,
+                    robots: 0,
+                    treasures: 0,
+                    token_multiplier: 0,
+                    lifegain_multiplier: 0,
+                    etb_lifegain_sources: 0
+                };
 
-                    holdSpeed = Math.max(holdSpeed * 0.8, 40);
+                value = Math.max(minimums[field], value);
+                state[field] = value;
+                updateUI();
+            }
 
-                    if (holdSpeed < 120) holdStep = 5;
-                    if (holdSpeed < 70) holdStep = 10;
+            function startHold(field, delta) {
+                holdSpeed = 200;
+                holdStep = 1;
 
-                    clearInterval(holdInterval);
-                    holdInterval = setInterval(() => {
+                applyDelta(field, delta);
+
+                holdTimeout = setTimeout(function() {
+                    holdInterval = setInterval(function() {
                         applyDelta(field, delta * holdStep);
+
+                        holdSpeed = Math.max(holdSpeed * 0.8, 40);
+
+                        if (holdSpeed < 120) holdStep = 5;
+                        if (holdSpeed < 70) holdStep = 10;
+
+                        clearInterval(holdInterval);
+                        holdInterval = setInterval(function() {
+                            applyDelta(field, delta * holdStep);
+                        }, holdSpeed);
+
                     }, holdSpeed);
+                }, 250);
+            }
 
-                }, holdSpeed);
-            }, 250);
-        }
+            function stopHold() {
+                clearTimeout(holdTimeout);
+                clearInterval(holdInterval);
+            }
 
-        function stopHold() {
-            clearTimeout(holdTimeout);
-            clearInterval(holdInterval);
-        }
+            function updateLog() {
+                const log = document.getElementById('log');
+                log.innerHTML = '';
 
-        // Attach hold listeners
-        document.querySelectorAll('.counter-btn').forEach(btn => {
-            const field = btn.dataset.field;
-            const delta = parseInt(btn.dataset.delta, 10);
+                if (!state.event_log) return;
 
-            btn.addEventListener('mousedown', () => startHold(field, delta));
-            btn.addEventListener('mouseup', stopHold);
-            btn.addEventListener('mouseleave', stopHold);
+                const reversed = state.event_log.slice().reverse();
+                const items = reversed.slice(0, 20);
 
-            btn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                startHold(field, delta);
-            });
-            btn.addEventListener('touchend', stopHold);
-        });
+                items.forEach(function(event) {
+                    const entry = document.createElement('div');
+                    entry.className = 'log-entry ' + event.outcome;
 
-        function updateLog() {
-            const log = document.getElementById('log');
-            log.innerHTML = '';
-            
-            const reversed = [...state.event_log].reverse();
-            reversed.slice(0, 20).forEach(event => {
-                const entry = document.createElement('div');
-                entry.className = 'log-entry ' + event.outcome;
-                
-                let outcomeDetail = event.outcome;
-                if (event.jackpot_count > 0) {
-                    outcomeDetail += ` (${event.jackpot_count}x6)`;
-                }
-                if (event.hit_count > 0) {
-                    outcomeDetail += ` (${event.hit_count}x4-5)`;
-                }
-                if (event.miss_count > 0) {
-                    outcomeDetail += ` (${event.miss_count}x1-3)`;
-                }
-                
-                entry.innerHTML = `
-                    <strong>${outcomeDetail}</strong> | 
-                    Spent: ${event.treasures_spent}💎 | 
-                    Rolled: [${event.dice_rolls.join(', ')}]${event.ignored_rolls.length > 0 ? ' Ignored: [' + event.ignored_rolls.join(', ') + ']' : ''} | 
-                    +${event.robots_created}🤖 +${event.treasures_created}💎 +${event.life_gained}❤️
-                `;
-                log.appendChild(entry);
-            });
-        }
+                    let outcomeDetail = event.outcome;
+                    if (event.jackpot_count > 0) {
+                        outcomeDetail += ' (' + event.jackpot_count + 'x6)';
+                    }
+                    if (event.hit_count > 0) {
+                        outcomeDetail += ' (' + event.hit_count + 'x4-5)';
+                    }
+                    if (event.miss_count > 0) {
+                        outcomeDetail += ' (' + event.miss_count + 'x1-3)';
+                    }
 
-        function sleep(ms) {
-            return new Promise(resolve => setTimeout(resolve, ms));
-        }
+                    let ignoredText = '';
+                    if (event.ignored_rolls && event.ignored_rolls.length > 0) {
+                        ignoredText = ' Ignored: [' + event.ignored_rolls.join(', ') + ']';
+                    }
 
-        // Initialize
-        updateUI();
+                    entry.innerHTML = '<strong>' + outcomeDetail + '</strong> | ' +
+                        'Spent: ' + event.treasures_spent + '💎 | ' +
+                        'Rolled: [' + event.dice_rolls.join(', ') + ']' + ignoredText + ' | ' +
+                        '+' + event.robots_created + '🤖 +' + event.treasures_created + '💎 +' + event.life_gained + '❤️';
+                    log.appendChild(entry);
+                });
+            }
+
+            function sleep(ms) {
+                return new Promise(function(resolve) { setTimeout(resolve, ms); });
+            }
+
+            // Initialize when DOM is ready
+            function init() {
+                // Attach event listeners
+                document.getElementById('spin-btn').addEventListener('click', spin);
+                document.getElementById('undo-btn').addEventListener('click', undo);
+                document.getElementById('save-btn').addEventListener('click', save);
+                document.getElementById('load-btn').addEventListener('click', load);
+                document.getElementById('reset-btn').addEventListener('click', reset);
+                document.getElementById('barbarian-toggle').addEventListener('click', toggleBarbarian);
+
+                // Attach hold listeners to counter buttons
+                const buttons = document.querySelectorAll('.counter-btn');
+                buttons.forEach(function(btn) {
+                    const field = btn.getAttribute('data-field');
+                    const delta = parseInt(btn.getAttribute('data-delta'), 10);
+
+                    btn.addEventListener('mousedown', function() { startHold(field, delta); });
+                    btn.addEventListener('mouseup', stopHold);
+                    btn.addEventListener('mouseleave', stopHold);
+
+                    btn.addEventListener('touchstart', function(e) {
+                        e.preventDefault();
+                        startHold(field, delta);
+                    });
+                    btn.addEventListener('touchend', stopHold);
+                });
+
+                // Make title clickable for fullscreen
+                document.querySelector('.title').addEventListener('click', toggleFullscreen);
+
+                // Initial UI update
+                updateUI();
+            }
+
+            // Run init when DOM is ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+        })();
     </script>
 </body>
 </html>
