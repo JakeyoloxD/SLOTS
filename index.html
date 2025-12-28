@@ -212,7 +212,7 @@
 
         @keyframes spin {
             from { transform: translateY(0); }
-            to { transform: translateY(-1200px); }
+            to { transform: translateY(-600%); }
         }
 
         @keyframes pulse {
@@ -998,10 +998,20 @@
                     return { element: reel, strip: strip };
                 }
 
+                // Get actual reel height from CSS
+                function getReelHeight() {
+                    var testReel = document.querySelector('.reel');
+                    if (testReel) return testReel.offsetHeight;
+                    return 200; // fallback
+                }
+
                 // Build ONLY the final number of reels
                 for (let i = 0; i < finalCount; i++) {
                     reels.push(createReel());
                 }
+
+                // Get the actual height after reels are in DOM
+                const reelHeight = getReelHeight();
 
                 // Initial spin
                 reels.forEach(function(r) { r.element.classList.add('spinning'); });
@@ -1016,7 +1026,7 @@
                         const badValue = event.ignored_rolls[i];
 
                         reel.element.classList.remove('spinning');
-                        reel.strip.style.transform = 'translateY(' + (-(badValue - 1) * 200) + 'px)';
+                        reel.strip.style.transform = 'translateY(' + (-(badValue - 1) * reelHeight) + 'px)';
                         reel.element.classList.add('ignored');
 
                         reelsContainer.classList.add('shake');
@@ -1045,7 +1055,7 @@
                     const finalValue = event.dice_rolls[i];
 
                     reel.element.classList.remove('spinning');
-                    reel.strip.style.transform = 'translateY(' + (-(finalValue - 1) * 200) + 'px)';
+                    reel.strip.style.transform = 'translateY(' + (-(finalValue - 1) * reelHeight) + 'px)';
 
                     reelsContainer.classList.add('shake');
                     await sleep(100);
