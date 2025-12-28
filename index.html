@@ -409,24 +409,24 @@
                     <div class="counter-label">LIFE</div>
                     <div class="counter-value" id="life">40</div>
                     <div class="counter-controls">
-                        <button class="counter-btn" onclick="modifyCounter('life', -1)">-</button>
-                        <button class="counter-btn" onclick="modifyCounter('life', 1)">+</button>
+                        <button class="counter-btn" data-field="life" data-delta="-1">-</button>
+                        <button class="counter-btn" data-field="life" data-delta="1">+</button>
                     </div>
                 </div>
                 <div class="counter">
                     <div class="counter-label">ROBOTS</div>
                     <div class="counter-value" id="robots">0</div>
                     <div class="counter-controls">
-                        <button class="counter-btn" onclick="modifyCounter('robots', -1)">-</button>
-                        <button class="counter-btn" onclick="modifyCounter('robots', 1)">+</button>
+                        <button class="counter-btn" data-field="robots" data-delta="-1">-</button>
+                        <button class="counter-btn" data-field="robots" data-delta="1">+</button>
                     </div>
                 </div>
                 <div class="counter">
                     <div class="counter-label">TREASURES</div>
                     <div class="counter-value" id="treasures">0</div>
                     <div class="counter-controls">
-                        <button class="counter-btn" onclick="modifyCounter('treasures', -1)">-</button>
-                        <button class="counter-btn" onclick="modifyCounter('treasures', 1)">+</button>
+                        <button class="counter-btn" data-field="treasures" data-delta="-1">-</button>
+                        <button class="counter-btn" data-field="treasures" data-delta="1">+</button>
                     </div>
                 </div>
             </div>
@@ -439,25 +439,25 @@
                 <div class="modifier">
                     <div class="modifier-label">TOKEN MULT</div>
                     <div class="modifier-value">
-                        <button class="counter-btn" onclick="modifyModifier('token_multiplier', -1)">-</button>
+                        <button class="counter-btn" data-field="token_multiplier" data-delta="-1">-</button>
                         <span id="token-mult">1</span>
-                        <button class="counter-btn" onclick="modifyModifier('token_multiplier', 1)">+</button>
+                        <button class="counter-btn" data-field="token_multiplier" data-delta="1">+</button>
                     </div>
                 </div>
                 <div class="modifier">
                     <div class="modifier-label">LIFEGAIN MULT</div>
                     <div class="modifier-value">
-                        <button class="counter-btn" onclick="modifyModifier('lifegain_multiplier', -1)">-</button>
+                        <button class="counter-btn" data-field="lifegain_multiplier" data-delta="-1">-</button>
                         <span id="lifegain-mult">1</span>
-                        <button class="counter-btn" onclick="modifyModifier('lifegain_multiplier', 1)">+</button>
+                        <button class="counter-btn" data-field="lifegain_multiplier" data-delta="1">+</button>
                     </div>
                 </div>
                 <div class="modifier">
                     <div class="modifier-label">ETB SOURCES</div>
                     <div class="modifier-value">
-                        <button class="counter-btn" onclick="modifyModifier('etb_lifegain_sources', -1)">-</button>
+                        <button class="counter-btn" data-field="etb_lifegain_sources" data-delta="-1">-</button>
                         <span id="etb-sources">0</span>
-                        <button class="counter-btn" onclick="modifyModifier('etb_lifegain_sources', 1)">+</button>
+                        <button class="counter-btn" data-field="etb_lifegain_sources" data-delta="1">+</button>
                     </div>
                 </div>
             </div>
@@ -471,7 +471,14 @@
             <div class="controls">
                 <div class="treasure-input">
                     <label>SPEND TREASURES:</label>
-                    <input type="number" id="treasure-spend" value="0" min="0">
+                    <input
+                            type="number"
+                            id="treasure-spend"
+                            value="0"
+                            min="0"
+                            max="4"
+                            step="1"
+                        />
                 </div>
                 <button class="spin-button" id="spin-btn" onclick="spin()">PULL LEVER</button>
             </div>
@@ -534,170 +541,184 @@
             return num;
         }
 
-        async function spin() {
-            if (isSpinning) return;
-            
-            const treasureSpend = parseInt(document.getElementById('treasure-spend').value) || 0;
-            if (treasureSpend > state.treasures) {
-                alert('Not enough treasures!');
-                return;
-            }
-            
-            playSound(pullSound);
-            
-            isSpinning = true;
-            document.getElementById('spin-btn').disabled = true;
-            document.getElementById('result').textContent = '';
-            document.getElementById('payout').innerHTML = '';
-            
-            const res = await fetch('/api/spin', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ treasures_spent: treasureSpend })
-            });
-            
-            const data = await res.json();
-            state = data.state;
-            const event = data.event;
-            
-            await animateSpin(event);
-            
-            document.getElementById('spin-btn').disabled = false;
-            isSpinning = false;
+    async function spin() {
+    if (isSpinning) return;
+
+    let treasureSpend = parseInt(document.getElementById('treasure-spend').value) || 0;
+    treasureSpend = Math.min(treasureSpend, 4);
+
+    if (treasureSpend > state.treasures) {
+        alert('Not enough treasures!');
+        return;
+    }
+
+    playSound(pullSound);
+
+    isSpinning = true;
+    document.getElementById('spin-btn').disabled = true;
+    document.getElementById('result').textContent = '';
+    document.getElementById('payout').innerHTML = '';
+
+    // 🔥 PHASE 1: IMMEDIATE SPEND (visual + state)
+    state.treasures -= treasureSpend;
+    updateUI();
+
+    // 🔄 Kick off backend spin (do NOT await yet)
+    const spinPromise = fetch('/api/spin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ treasures_spent: treasureSpend })
+    }).then(res => res.json());
+
+    // 🎰 Run animation FIRST
+    const data = await spinPromise;
+    await animateSpin(data.event);
+
+    // 💰 PHASE 2: APPLY WINNINGS AFTER ANIMATION
+    state = data.state;
+    updateUI();
+
+    document.getElementById('spin-btn').disabled = false;
+    isSpinning = false;
+}
+
+async function animateSpin(event) {
+    const reelsContainer = document.getElementById('reels');
+    reelsContainer.innerHTML = '';
+    reelsContainer.classList.add('shake');
+
+    const reels = [];
+    const finalCount = event.dice_rolls.length;
+
+    function createReel() {
+        const reel = document.createElement('div');
+        reel.className = 'reel';
+
+        const strip = document.createElement('div');
+        strip.className = 'reel-strip';
+
+        for (let i = 1; i <= 6; i++) {
+            const face = document.createElement('div');
+            face.className = 'reel-face';
+            face.textContent = i;
+            strip.appendChild(face);
         }
 
-        async function animateSpin(event) {
-            const reelsContainer = document.getElementById('reels');
-            reelsContainer.innerHTML = '';
+        reel.appendChild(strip);
+        reelsContainer.appendChild(reel);
+        return { element: reel, strip };
+    }
+
+    // Build ONLY the final number of reels
+    for (let i = 0; i < finalCount; i++) {
+        reels.push(createReel());
+    }
+
+    // Initial spin
+    reels.forEach(r => r.element.classList.add('spinning'));
+    await sleep(800);
+
+    const hasBarbarian = event.ignored_rolls && event.ignored_rolls.length > 0;
+
+    // Phase 1: show WORSE rolls
+    if (hasBarbarian) {
+        for (let i = 0; i < reels.length; i++) {
+            const reel = reels[i];
+            const badValue = event.ignored_rolls[i];
+
+            reel.element.classList.remove('spinning');
+            reel.strip.style.transform = `translateY(${-(badValue - 1) * 200}px)`;
+            reel.element.classList.add('ignored');
+
             reelsContainer.classList.add('shake');
-            
-            const reels = [];
-            
-            // Create ignored reels first (on the left)
-            if (event.ignored_rolls && event.ignored_rolls.length > 0) {
-                event.ignored_rolls.forEach(value => {
-                    const reel = document.createElement('div');
-                    reel.className = 'reel ignored';
-                    
-                    const strip = document.createElement('div');
-                    strip.className = 'reel-strip';
-                    
-                    for (let i = 0; i < 6; i++) {
-                        const face = document.createElement('div');
-                        face.className = 'reel-face';
-                        face.textContent = ((i % 6) + 1);
-                        strip.appendChild(face);
-                    }
-                    
-                    reel.appendChild(strip);
-                    reelsContainer.appendChild(reel);
-                    
-                    reels.push({ element: reel, strip, value, index: -1, isIgnored: true });
-                });
-            }
-            
-            // Create kept reels after (on the right)
-            event.dice_rolls.forEach((value, index) => {
-                const reel = document.createElement('div');
-                reel.className = 'reel';
-                
-                const strip = document.createElement('div');
-                strip.className = 'reel-strip';
-                
-                // Create 6 faces cycling through values
-                for (let i = 0; i < 6; i++) {
-                    const face = document.createElement('div');
-                    face.className = 'reel-face';
-                    face.textContent = ((i % 6) + 1);
-                    strip.appendChild(face);
-                }
-                
-                reel.appendChild(strip);
-                reelsContainer.appendChild(reel);
-                
-                reels.push({ element: reel, strip, value, index, isIgnored: false });
-            });
-            
-            // Spin all reels
-            reels.forEach(r => r.element.classList.add('spinning'));
-            
-            await sleep(800);
-            
-            // Land reels sequentially (left to right)
-            for (let i = 0; i < reels.length; i++) {
-                const reel = reels[i];
-                reel.element.classList.remove('spinning');
-                
-                // Position to show final value
-                const offset = -(reel.value - 1) * 200;
-                reel.strip.style.transform = `translateY(${offset}px)`;
-                
-                reelsContainer.classList.add('shake');
-                await sleep(100);
-                reelsContainer.classList.remove('shake');
-                
-                await sleep(150);
-            }
-            
+            await sleep(100);
             reelsContainer.classList.remove('shake');
-            
-            // Highlight dice by outcome (only kept dice)
-            await sleep(300);
-            reels.forEach((reel) => {
-                if (!reel.isIgnored) {
-                    if (reel.value === 6) {
-                        reel.element.classList.add('winner');
-                    } else if (reel.value >= 4) {
-                        reel.element.style.borderColor = '#00ff88';
-                    }
-                }
-            });
-            
-            // Show result
-            await sleep(300);
-            const resultBanner = document.getElementById('result');
-            let resultText = event.outcome;
-            if (event.jackpot_count > 1) {
-                resultText += ` x${event.jackpot_count}`;
-            } else if (event.hit_count > 1 && event.jackpot_count === 0) {
-                resultText += ` x${event.hit_count}`;
-            }
-            resultBanner.textContent = resultText;
-            resultBanner.className = 'result-banner ' + event.outcome;
-            
-            // Jackpot effects
-            if (event.outcome === 'JACKPOT') {
-                // Play jackpot sound multiple times with increasing volume
-                for (let j = 0; j < event.jackpot_count; j++) {
-                    setTimeout(() => {
-                        const sound = jackpotSound.cloneNode();
-                        sound.volume = Math.min(1.0, 0.5 + (j * 0.2));
-                        sound.play().catch(e => console.log('Audio play failed:', e));
-                    }, j * 400);
-                }
-                createParticles();
-                document.body.classList.add('shake');
-                await sleep(300);
-                document.body.classList.remove('shake');
-            } else if (event.outcome === 'HIT') {
-                // Play hit sound multiple times with increasing volume
-                for (let h = 0; h < event.hit_count; h++) {
-                    setTimeout(() => {
-                        const sound = hitSound.cloneNode();
-                        sound.volume = Math.min(1.0, 0.5 + (h * 0.2));
-                        sound.play().catch(e => console.log('Audio play failed:', e));
-                    }, h * 300);
-                }
-            } else if (event.outcome === 'MISS') {
-                playSound(missSound);
-            }
-            
-            // Show payout
-            await sleep(500);
-            showPayout(event);
-            
-            updateUI();
+            await sleep(150);
         }
+
+        await sleep(300);
+
+        // 🔊 Pull lever again for the reroll
+        playSound(pullSound);
+
+        // Respins
+        reels.forEach(r => {
+            r.element.classList.add('spinning');
+            r.element.classList.remove('ignored');
+        });
+
+        await sleep(600);
+    }
+
+    // Phase 2: land FINAL results
+    for (let i = 0; i < reels.length; i++) {
+        const reel = reels[i];
+        const finalValue = event.dice_rolls[i];
+
+        reel.element.classList.remove('spinning');
+        reel.strip.style.transform = `translateY(${-(finalValue - 1) * 200}px)`;
+
+        reelsContainer.classList.add('shake');
+        await sleep(100);
+        reelsContainer.classList.remove('shake');
+        await sleep(150);
+    }
+
+    reelsContainer.classList.remove('shake');
+
+    // Highlight results
+    await sleep(300);
+    event.dice_rolls.forEach((value, idx) => {
+        if (value === 6) {
+            reels[idx].element.classList.add('winner');
+        } else if (value >= 4) {
+            reels[idx].element.style.borderColor = '#00ff88';
+        }
+    });
+
+    // Result banner
+    await sleep(300);
+    const resultBanner = document.getElementById('result');
+    let resultText = event.outcome;
+
+    if (event.jackpot_count > 1) {
+        resultText += ` x${event.jackpot_count}`;
+    } else if (event.hit_count > 1 && event.jackpot_count === 0) {
+        resultText += ` x${event.hit_count}`;
+    }
+
+    resultBanner.textContent = resultText;
+    resultBanner.className = 'result-banner ' + event.outcome;
+
+    // Sounds + effects
+    if (event.outcome === 'JACKPOT') {
+        for (let i = 0; i < event.jackpot_count; i++) {
+            setTimeout(() => {
+                const s = jackpotSound.cloneNode();
+                s.volume = Math.min(1, 0.6 + i * 0.15);
+                s.play().catch(() => {});
+            }, i * 400);
+        }
+        createParticles();
+    } else if (event.outcome === 'HIT') {
+        for (let i = 0; i < event.hit_count; i++) {
+            setTimeout(() => {
+                const s = hitSound.cloneNode();
+                s.volume = Math.min(1, 0.6 + i * 0.15);
+                s.play().catch(() => {});
+            }, i * 300);
+        }
+    } else {
+        playSound(missSound);
+    }
+
+    // Payout
+    await sleep(500);
+    showPayout(event);
+    updateUI();
+}
+
+   
 
         function showPayout(event) {
             const payout = document.getElementById('payout');
@@ -785,27 +806,27 @@
             }
         }
 
-        async function modifyCounter(field, delta) {
-            playSound(nextSound);
-            const newValue = Math.max(0, state[field] + delta);
-            await fetch('/api/modify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ field, value: newValue })
-            });
-            await fetchState();
-        }
+        // async function modifyCounter(field, delta) {
+        //     playSound(nextSound);
+        //     const newValue = Math.max(0, state[field] + delta);
+        //     await fetch('/api/modify', {
+        //         method: 'POST',
+        //         headers: { 'Content-Type': 'application/json' },
+        //         body: JSON.stringify({ field, value: newValue })
+        //     });
+        //     await fetchState();
+        // }
 
-        async function modifyModifier(field, delta) {
-            playSound(nextSound);
-            const newValue = Math.max(field === 'etb_lifegain_sources' ? 0 : 1, state[field] + delta);
-            await fetch('/api/modify', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ field, value: newValue })
-            });
-            await fetchState();
-        }
+        // async function modifyModifier(field, delta) {
+        //     playSound(nextSound);
+        //     const newValue = Math.max(field === 'etb_lifegain_sources' ? 0 : 1, state[field] + delta);
+        //     await fetch('/api/modify', {
+        //         method: 'POST',
+        //         headers: { 'Content-Type': 'application/json' },
+        //         body: JSON.stringify({ field, value: newValue })
+        //     });
+        //     await fetchState();
+        // }
 
         async function toggleBarbarian() {
             playSound(nextSound);
@@ -853,6 +874,77 @@
                 document.getElementById('payout').innerHTML = '';
             }
         }
+        let holdTimeout = null;
+let holdInterval = null;
+let holdSpeed = 200;
+let holdStep = 1;
+
+async function applyDelta(field, delta) {
+    playSound(nextSound);
+
+    let value = state[field] + delta;
+
+    // Correct per-field minimums
+        const minimums = {
+        life: 0,
+        robots: 0,
+        treasures: 0,
+        token_multiplier: 0,
+        lifegain_multiplier: 0,
+        etb_lifegain_sources: 0
+    };
+
+    value = Math.max(minimums[field], value);
+
+    await fetch('/api/modify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field, value })
+    });
+
+    await fetchState();
+}
+
+
+function startHold(field, delta) {
+    holdSpeed = 200;
+    holdStep = 1;
+
+    applyDelta(field, delta);
+
+    holdTimeout = setTimeout(() => {
+        holdInterval = setInterval(() => {
+            applyDelta(field, delta * holdStep);
+
+            holdSpeed = Math.max(holdSpeed * 0.8, 40);
+
+            if (holdSpeed < 120) holdStep = 5;
+            if (holdSpeed < 70) holdStep = 10;
+
+            clearInterval(holdInterval);
+            holdInterval = setInterval(() => {
+                applyDelta(field, delta * holdStep);
+            }, holdSpeed);
+
+        }, holdSpeed);
+    }, 250);
+}
+
+function stopHold() {
+    clearTimeout(holdTimeout);
+    clearInterval(holdInterval);
+}
+document.querySelectorAll('.counter-btn').forEach(btn => {
+    const field = btn.dataset.field;
+    const delta = parseInt(btn.dataset.delta, 10);
+
+    btn.addEventListener('mousedown', () => startHold(field, delta));
+    btn.addEventListener('mouseup', stopHold);
+    btn.addEventListener('mouseleave', stopHold);
+
+    btn.addEventListener('touchstart', () => startHold(field, delta));
+    btn.addEventListener('touchend', stopHold);
+});
 
         function updateLog() {
             const log = document.getElementById('log');
@@ -890,6 +982,7 @@
 
         // Initialize
         fetchState();
+        
     </script>
 </body>
 </html>
