@@ -656,55 +656,34 @@
             let state = JSON.parse(JSON.stringify(defaultState));
             let isSpinning = false;
 
-            // Load sound effects (gracefully handle missing files)
-            function createAudio(filename) {
-                const audio = new Audio(filename);
-                audio.preload = 'auto';
-                return audio;
+            // Simple audio setup
+            const sounds = {
+                PULL: new Audio('static/PULL.wav'),
+                NEXT: new Audio('static/NEXT.wav'),
+                MISS: new Audio('static/MISS.wav'),
+                HIT: new Audio('static/HIT.wav'),
+                JACKPOT: new Audio('static/JACKPOT.wav')
+            };
+
+            // Preload all
+            Object.values(sounds).forEach(function(s) { s.preload = 'auto'; });
+
+            function playSound(name, volume) {
+                var s = sounds[name];
+                if (!s) return;
+                s.currentTime = 0;
+                s.volume = volume || 1;
+                s.play().catch(function(){});
             }
 
-            const pullSound = createAudio('static/PULL.wav');
-            const nextSound = createAudio('static/NEXT.wav');
-            const missSound = createAudio('static/MISS.wav');
-            const hitSound = createAudio('static/HIT.wav');
-            const jackpotSound = createAudio('static/JACKPOT.wav');
-
-            const allSounds = [pullSound, nextSound, missSound, hitSound, jackpotSound];
-            let audioUnlocked = false;
-
-            // Mobile browsers require audio to be "unlocked" via user interaction
-            function unlockAudio() {
-                if (audioUnlocked) return;
-                
-                allSounds.forEach(function(sound) {
-                    // Play and immediately pause to unlock
-                    sound.muted = true;
-                    sound.play().then(function() {
-                        sound.pause();
-                        sound.muted = false;
-                        sound.currentTime = 0;
-                    }).catch(function() {});
+            // On first tap, play silent to unlock all audio on iOS
+            function unlockAllAudio() {
+                Object.values(sounds).forEach(function(s) {
+                    s.play().then(function() { s.pause(); s.currentTime = 0; }).catch(function(){});
                 });
-                
-                audioUnlocked = true;
-                // Remove listeners after unlock
-                document.removeEventListener('touchstart', unlockAudio);
-                document.removeEventListener('touchend', unlockAudio);
-                document.removeEventListener('click', unlockAudio);
+                document.removeEventListener('touchstart', unlockAllAudio);
             }
-
-            // Attach unlock listeners
-            document.addEventListener('touchstart', unlockAudio, { once: true });
-            document.addEventListener('touchend', unlockAudio, { once: true });
-            document.addEventListener('click', unlockAudio, { once: true });
-
-            function playSound(audio) {
-                if (!audio) return;
-                try {
-                    audio.currentTime = 0;
-                    audio.play().catch(function() {});
-                } catch (e) {}
-            }
+            document.addEventListener('touchstart', unlockAllAudio);
 
             function toggleFullscreen() {
                 const doc = document.documentElement;
@@ -862,7 +841,7 @@
                     return;
                 }
 
-                playSound(pullSound);
+                playSound('PULL');
 
                 isSpinning = true;
                 document.getElementById('spin-btn').disabled = true;
@@ -943,7 +922,7 @@
                     await sleep(300);
 
                     // Pull lever again for the reroll
-                    playSound(pullSound);
+                    playSound('PULL');
 
                     // Respins
                     reels.forEach(function(r) {
@@ -999,9 +978,7 @@
                     for (let i = 0; i < event.jackpot_count; i++) {
                         (function(idx) {
                             setTimeout(function() {
-                                const s = jackpotSound.cloneNode();
-                                s.volume = Math.min(1, 0.6 + idx * 0.15);
-                                s.play().catch(function() {});
+                                playSound('JACKPOT', Math.min(1, 0.6 + idx * 0.15));
                             }, idx * 400);
                         })(i);
                     }
@@ -1010,14 +987,12 @@
                     for (let i = 0; i < event.hit_count; i++) {
                         (function(idx) {
                             setTimeout(function() {
-                                const s = hitSound.cloneNode();
-                                s.volume = Math.min(1, 0.6 + idx * 0.15);
-                                s.play().catch(function() {});
+                                playSound('HIT', Math.min(1, 0.6 + idx * 0.15));
                             }, idx * 300);
                         })(i);
                     }
                 } else {
-                    playSound(missSound);
+                    playSound('MISS');
                 }
 
                 // Payout
@@ -1121,13 +1096,13 @@
             }
 
             function toggleBarbarian() {
-                playSound(nextSound);
+                playSound('NEXT');
                 state.barbarian_class_active = !state.barbarian_class_active;
                 updateUI();
             }
 
             function undo() {
-                playSound(nextSound);
+                playSound('NEXT');
                 if (!state.event_log || !state.event_log.length) {
                     alert('Nothing to undo');
                     return;
@@ -1149,7 +1124,7 @@
             }
 
             function save() {
-                playSound(nextSound);
+                playSound('NEXT');
                 try {
                     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
                     alert('Game saved!');
@@ -1159,7 +1134,7 @@
             }
 
             function load() {
-                playSound(nextSound);
+                playSound('NEXT');
                 try {
                     const saved = localStorage.getItem(STORAGE_KEY);
                     if (!saved) {
@@ -1176,7 +1151,7 @@
 
             function reset() {
                 if (confirm('Reset all state?')) {
-                    playSound(nextSound);
+                    playSound('NEXT');
                     state = JSON.parse(JSON.stringify(defaultState));
                     updateUI();
                     document.getElementById('reels').innerHTML = '';
@@ -1192,7 +1167,7 @@
             let holdStep = 1;
 
             function applyDelta(field, delta) {
-                playSound(nextSound);
+                playSound('NEXT');
 
                 if (!state) return;
 
